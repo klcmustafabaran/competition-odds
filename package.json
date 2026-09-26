@@ -1,0 +1,21 @@
+{
+  "name": "competition-odds",
+  "version": "1.0.0",
+  "description": "Takım adıyla arama yapıp maç öncesi sakat, cezalı, form, oran, hava durumu ve tahmin bilgisini gösteren uygulama",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "localtunnel": "^2.0.2"
+  }
+}

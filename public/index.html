@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Competition Odds</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <meta name="theme-color" content="#2f8a5b" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Comp Odds" />
+    <link rel="apple-touch-icon" href="icons/icon-192.png" />
+    <script>
+      // Kayıtlı tema, sayfa çizilmeden önce uygulanır (yanıp sönmeyi önler).
+      try {
+        const saved = localStorage.getItem('co-theme');
+        if (saved === 'light' || saved === 'dark') document.documentElement.dataset.theme = saved;
+      } catch {}
+    </script>
+    <link rel="stylesheet" href="css/style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="wrap topbar-inner">
+        <a class="brand" href="./"><span class="brand-mark">CO</span>Competition Odds</a>
+        <div class="topbar-actions">
+          <span id="demo-badge" class="badge" hidden>Demo verisi</span>
+          <button id="install-app" class="btn small" type="button" hidden>⬇️ Uygulamayı yükle</button>
+          <button id="theme-toggle" class="theme-toggle" type="button">
+            <span class="theme-icon" aria-hidden="true">🌙</span><span class="theme-label">Koyu tema</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <main class="wrap">
+      <section class="hero">
+        <h1>Takımını ara, maç öncesi her şeyi gör</h1>
+        <p class="muted">Form, puan durumu, aralarındaki maçlar, oranlar, hava durumu ve istatistiksel tahmin tek ekranda.</p>
+        <div class="search">
+          <input id="search" type="search" placeholder="Takım adı yaz (ör. Arsenal, Real Madrid)" autocomplete="off" aria-label="Takım ara" />
+          <ul id="suggestions" class="suggestions" hidden></ul>
+        </div>
+        <div id="favorites" class="favorites" hidden></div>
+        <p class="muted small coverage">
+          Kapsanan ligler: Premier Lig, Championship, La Liga, Serie A, Bundesliga, Ligue 1, Eredivisie, Primeira Liga,
+          Brezilya Serie A ve Şampiyonlar Ligi.
+        </p>
+        <p id="demo-hint" class="muted small" hidden>
+          Demo modundasın: <b>demo</b> ya da <b>örnek</b> yaz. Gerçek veri için README'deki anahtar adımını uygula.
+        </p>
+      </section>
+
+      <div id="result"></div>
+    </main>
+
+    <footer class="wrap footer">
+      Bilgi amaçlıdır, tahminler kesinlik taşımaz. 18 yaş altı için değildir. Veri: football-data.org, The Odds API, Open-Meteo.
+    </footer>
+
+    <button id="coupon-fab" class="coupon-fab" type="button" aria-controls="coupon" aria-expanded="false">
+      🎫 Kupon <span class="count">0</span>
+    </button>
+    <aside id="coupon" class="coupon-drawer" aria-label="Kupon" hidden></aside>
+
+    <script src="js/utils.js"></script>
+    <script src="js/theme.js"></script>
+    <script src="js/demo-data.js"></script>
+    <script src="js/model.js"></script>
+    <script src="js/analysis.js"></script>
+    <script src="js/coupon.js"></script>
+    <script src="js/app.js"></script>
+    <script src="js/pwa.js"></script>
+  </body>
+</html>
