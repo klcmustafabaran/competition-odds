@@ -185,16 +185,18 @@
   // group: aynı maçta birbirinin alternatifi olan tercihler (ör. MS 1 / X / 2).
   function marketList(prediction, odds, report) {
     const mw = odds?.matchWinner;
+    const books = odds?.books ?? {};
     const bookLine = (line) => odds?.overUnder?.find((l) => l.line === line);
     const markets = [
-      { key: 'MS1', group: 'ms', label: 'MS 1', p: prediction.probs.home, odd: mw?.home },
-      { key: 'MSX', group: 'ms', label: 'MS X', p: prediction.probs.draw, odd: mw?.draw },
-      { key: 'MS2', group: 'ms', label: 'MS 2', p: prediction.probs.away, odd: mw?.away },
+      { key: 'MS1', group: 'ms', label: 'MS 1', p: prediction.probs.home, odd: mw?.home, book: books.home },
+      { key: 'MSX', group: 'ms', label: 'MS X', p: prediction.probs.draw, odd: mw?.draw, book: books.draw },
+      { key: 'MS2', group: 'ms', label: 'MS 2', p: prediction.probs.away, odd: mw?.away, book: books.away },
     ];
     for (const ou of prediction.overUnder) {
+      const line = Number(ou.line);
       markets.push(
-        { key: `U${ou.line}`, group: `au${ou.line}`, label: `${ou.line} Üst`, p: ou.over, odd: bookLine(ou.line)?.over },
-        { key: `A${ou.line}`, group: `au${ou.line}`, label: `${ou.line} Alt`, p: ou.under, odd: bookLine(ou.line)?.under },
+        { key: `U${ou.line}`, group: `au${ou.line}`, label: `${ou.line} Üst`, p: ou.over, odd: bookLine(ou.line)?.over, book: books[`over${line}`] },
+        { key: `A${ou.line}`, group: `au${ou.line}`, label: `${ou.line} Alt`, p: ou.under, odd: bookLine(ou.line)?.under, book: books[`under${line}`] },
       );
     }
     markets.push(

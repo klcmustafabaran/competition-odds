@@ -5,7 +5,8 @@ import { COMPETITIONS } from './config.js';
 import { normalize } from './text.js';
 
 const BASE_URL = 'https://api.the-odds-api.com/v4';
-const CACHE_SECONDS = 6 * 3600;
+// Ücretsiz planda aylık 500 kredi var; 12 saatlik önbellek harcamayı düşük tutar.
+const CACHE_SECONDS = 12 * 3600;
 const MAX_KICKOFF_DIFF_MS = 3 * 3600 * 1000;
 const STOP_WORDS = new Set(['fc', 'cf', 'afc', 'sc', 'ac', 'ssc', 'as', 'club', 'de', 'cd', 'ud', 'rc', 'sv', 'fk', 'if', 'ca', 'se', 'ec', 'calcio', 'clube', 'futebol', 'football', 'the', 'and', '1']);
 
@@ -67,28 +68,48 @@ function findEvent(events, homeName, awayName, kickoffIso) {
   return best?.event ?? null;
 }
 
+// Her pazar için bütün şirketler taranır ve en yüksek oran seçilir (aynı istekte geldiği için ek kredi harcamaz).
 function parseEvent(event) {
-  const market = (bm, key) => bm.markets.find((m) => m.key === key);
-  const bookmaker =
-    event.bookmakers.find((bm) => market(bm, 'h2h') && market(bm, 'totals')?.outcomes.some((o) => o.point === 2.5)) ??
-    event.bookmakers.find((bm) => market(bm, 'h2h'));
-  if (!bookmaker) return null;
+  const books = {};
 
-  const price = (outcomes, name) => outcomes?.find((o) => o.name === name)?.price ?? null;
-  const h2h = market(bookmaker, 'h2h')?.outcomes;
-  const totals = market(bookmaker, 'totals')?.outcomes ?? [];
-  const totalPrice = (name, point) => totals.find((o) => o.name === name && o.point === point)?.price ?? null;
+  function best(marketKey, pick) {
+    let top = null;
+    for (const bookmaker of event.bookmakers ?? []) {
+      const outcome = bookmaker.markets?.find((m) => m.key === marketKey)?.outcomes.find(pick);
+      const price = Number(outcome?.price);
+      if (price > 0 && (!top || price > top.price)) top = { price, title: bookmaker.title };
+    }
+    return top;
+  }
 
+  function odd(field, marketKey, pick) {
+    const top = best(marketKey, pick);
+    if (top) books[field] = top.title;
+    return top?.price ?? null;
+  }
+
+  const matchWinner = {
+    home: odd('home', 'h2h', (o) => o.name === event.home_team),
+    draw: odd('draw', 'h2h', (o) => o.name === 'Draw'),
+    away: odd('away', 'h2h', (o) => o.name === event.away_team),
+  };
+
+  const overUnder = [1.5, 2.5, 3.5]
+    .map((point) => ({
+      line: point.toFixed(1),
+      over: odd(`over${point}`, 'totals', (o) => o.name === 'Over' && o.point === point),
+      under: odd(`under${point}`, 'totals', (o) => o.name === 'Under' && o.point === point),
+    }))
+    .filter((l) => l.over || l.under);
+
+  if (!matchWinner.home && !overUnder.length) return null;
+
+  const titles = [...new Set(Object.values(books))];
   return {
-    bookmaker: bookmaker.title,
-    matchWinner: {
-      home: price(h2h, event.home_team),
-      draw: price(h2h, 'Draw'),
-      away: price(h2h, event.away_team),
-    },
-    overUnder: [1.5, 2.5, 3.5]
-      .map((point) => ({ line: point.toFixed(1), over: totalPrice('Over', point), under: totalPrice('Under', point) }))
-      .filter((l) => l.over || l.under),
+    bookmaker: titles.length > 1 ? `en iyi oran · ${titles.length} şirket` : titles[0] ?? 'bilinmiyor',
+    books,
+    matchWinner,
+    overUnder,
   };
 }
 

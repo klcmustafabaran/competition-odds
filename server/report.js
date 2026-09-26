@@ -159,11 +159,8 @@ async function buildReport(fx, teamId, ownMatches) {
   const [oddsResult, weather] = await Promise.all([
     // Oran servisi yalnızca oynanmamış maçları verir.
     played ? { status: 'played', odds: null } : settle('Oranlar', matchOdds(fx.competition.code, fx.homeTeam.name, fx.awayTeam.name, fx.utcDate), null),
-    settle(
-      'Hava durumu',
-      getMatchWeather(cityCandidates(homeInfo?.address), fx.utcDate, COUNTRY_CODES[homeInfo?.areaCode]),
-      null,
-    ),
+    // Hava durumu ikincil bilgidir; alınamazsa kullanıcıya uyarı gösterilmez, alan boş kalır.
+    getMatchWeather(cityCandidates(homeInfo?.address), fx.utcDate, COUNTRY_CODES[homeInfo?.areaCode]).catch(() => null),
   ]);
 
   const matchesByTeam = { [teamId]: ownMatches, [otherId]: otherMatches };

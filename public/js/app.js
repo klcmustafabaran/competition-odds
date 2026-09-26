@@ -332,7 +332,7 @@
           <td>${esc(m.label)}</td>
           <td>${pct(m.p)}</td>
           <td title="${m.formHits}/${m.formTrials} maçta gerçekleşti">${pct(m.formP)} <small class="muted">${m.formHits}/${m.formTrials}</small></td>
-          <td>${m.odd ? m.odd.toFixed(2) : '–'}</td>
+          <td${m.book ? ` data-tip="${esc(m.book)} · en yüksek oran"` : ''}>${m.odd ? m.odd.toFixed(2) : '–'}</td>
           <td><input class="odd-input" type="text" inputmode="decimal" data-iddaa="${m.key}" value="${iddaa ? iddaa.toFixed(2) : ''}" placeholder="–" aria-label="${esc(m.label)} iddaa oranı"></td>
           <td class="edge-cell">${edgeText(edge)}</td>
           <td><button type="button" class="add-pick${picked ? ' on' : ''}" data-add-pick="${m.key}" aria-pressed="${picked}" title="${picked ? 'Kupondan çıkar' : 'Kupona ekle'}">${picked ? '✓' : '+'}</button></td>
