@@ -277,5 +277,17 @@
   }
 
   window.CO = window.CO || {};
-  window.CO.model = { predict, marketRows, marketList, leagueStrengths, VALUE_THRESHOLD };
+  // Oynanmış maçta bir tercihin tutup tutmadığı.
+  function marketHit(key, result) {
+    const total = result.home + result.away;
+    if (key === 'MS1') return result.home > result.away;
+    if (key === 'MS2') return result.home < result.away;
+    if (key === 'MSX') return result.home === result.away;
+    if (key === 'KGV') return result.home > 0 && result.away > 0;
+    if (key === 'KGY') return !(result.home > 0 && result.away > 0);
+    const line = Number(key.slice(1));
+    return key.startsWith('U') ? total > line : total < line;
+  }
+
+  window.CO.model = { predict, marketRows, marketList, leagueStrengths, marketHit, VALUE_THRESHOLD };
 })();

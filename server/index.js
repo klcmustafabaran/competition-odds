@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import * as fd from './footballData.js';
 import { buildFixtureReport, buildMatchReport } from './report.js';
 import { loadIndex, searchTeams } from './teamIndex.js';
 
@@ -54,6 +55,26 @@ app.get('/api/fixture/:fixtureId', async (req, res, next) => {
     const report = await buildFixtureReport(fixtureId);
     if (!report) return res.status(404).json({ error: 'Maç bulunamadı.' });
     res.json(report);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Sadece skor: kupon karnesi bunu kullanır, tam rapora göre çok daha az istek harcar.
+app.get('/api/result/:fixtureId', async (req, res, next) => {
+  const fixtureId = Number(req.params.fixtureId);
+  if (!Number.isInteger(fixtureId)) return res.status(400).json({ error: 'Geçersiz maç.' });
+  try {
+    const match = await fd.match(fixtureId);
+    if (!match?.id) return res.status(404).json({ error: 'Maç bulunamadı.' });
+    const played = match.status === 'FINISHED' && match.score?.fullTime?.home !== null;
+    res.json({
+      id: match.id,
+      date: match.utcDate,
+      status: match.status,
+      played,
+      result: played ? { home: match.score.fullTime.home, away: match.score.fullTime.away } : null,
+    });
   } catch (err) {
     next(err);
   }

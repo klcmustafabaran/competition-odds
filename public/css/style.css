@@ -371,6 +371,28 @@ tr.hit .hit-cell { color: var(--win); }
 .c-close:hover { color: var(--text); }
 .c-notice { margin: 0; padding: .55rem .8rem; border-radius: 10px; background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--text-soft); font-size: .9rem; }
 
+.c-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px; padding: 3px; border-radius: 10px; background: var(--card-2); }
+.c-tabs button { border: 0; border-radius: 8px; background: none; color: var(--muted); font: inherit; font-size: .85rem; padding: .45rem .5rem; cursor: pointer; }
+.c-tabs button.on { background: var(--card); color: var(--text); font-weight: 600; }
+.c-tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* ---------- karne ---------- */
+.k-summary .c-prob { background: color-mix(in srgb, var(--accent) 12%, var(--card-2)); }
+.k-summary .c-prob b { color: var(--accent); }
+.k-list { display: grid; gap: .6rem; }
+.k-entry { background: var(--card-2); border-radius: 10px; padding: .6rem .7rem; border-left: 3px solid var(--neutral-bar); }
+.k-entry.won { border-left-color: var(--win); }
+.k-entry.lost { border-left-color: var(--loss); }
+.k-head { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; font-size: .8rem; }
+.k-status { font-weight: 700; font-size: .85rem; }
+.k-head .c-remove { margin-left: auto; }
+.k-picks { display: grid; gap: .25rem; margin-top: .45rem; }
+.k-picks li { display: grid; grid-template-columns: 1.1rem minmax(0, 1fr) auto auto; gap: .4rem; align-items: center; font-size: .85rem; }
+.k-picks .k-match { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.k-picks li.hit > span:first-child { color: var(--win); font-weight: 700; }
+.k-picks li.miss > span:first-child { color: var(--loss); font-weight: 700; }
+.k-picks li.wait { color: var(--muted); }
+
 .c-list { display: grid; gap: .5rem; }
 .c-item { background: var(--card-2); border-radius: 10px; padding: .6rem .7rem; display: grid; gap: .4rem; }
 .c-match { display: grid; }

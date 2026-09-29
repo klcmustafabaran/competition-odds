@@ -4,6 +4,9 @@
   const { esc, pct } = CO.util;
   const COUPON_KEY = 'co-coupon';
   const IDDAA_KEY = 'co-iddaa-odds';
+  const HISTORY_KEY = 'co-coupon-history';
+  const RESULTS_KEY = 'co-fixture-results';
+  const MAX_HISTORY = 50;
   const SHARE_PREFIX = '#kupon=';
   const MAX_SELECTIONS = 20;
   const MAX_ATTEMPTS_PER_COUPON = 30;
@@ -57,6 +60,10 @@
     shareLink: '',
     notice: '',
     open: false,
+    tab: 'coupon',
+    history: read(HISTORY_KEY, []),
+    results: read(RESULTS_KEY, {}), // fixtureId -> {home, away}
+    checking: false,
   };
   const listeners = [];
 
@@ -208,6 +215,111 @@
     state.selections = state.selections.map((s) => ({ ...s, pickKey: coupon.picks[s.fixtureId] ?? s.pickKey }));
     state.notice = 'Üretilen kupon uygulandı.';
     changed();
+  }
+
+  // ---------- karne ----------
+  // Kaydedilen kuponlar maçlar bitince /api/result ile sonuçlanır; skorlar tarayıcıda saklanır.
+  function saveToHistory() {
+    if (!state.selections.length) return;
+    const sum = summarize(state.selections);
+    state.history.unshift({
+      id: `k${Date.now()}`,
+      savedAt: new Date().toISOString(),
+      method: state.method,
+      stake: state.stake,
+      probability: sum.p,
+      totalOdds: sum.odds,
+      selections: state.selections.map((sel) => ({
+        fixtureId: sel.fixtureId,
+        date: sel.date,
+        league: sel.league,
+        home: sel.home.name,
+        away: sel.away.name,
+        pickKey: sel.pickKey,
+        label: marketOf(sel)?.label ?? sel.pickKey,
+        p: probOf(marketOf(sel)),
+        odd: oddOf(sel),
+      })),
+    });
+    state.history = state.history.slice(0, MAX_HISTORY);
+    write(HISTORY_KEY, state.history);
+    state.notice = 'Kupon karneye kaydedildi.';
+    state.tab = 'history';
+    render();
+    checkResults();
+  }
+
+  const pendingFixtures = () => {
+    const now = Date.now();
+    const ids = new Set();
+    for (const entry of state.history) {
+      for (const sel of entry.selections) {
+        // Maç saatinden ~2 saat sonra sonuç beklenir.
+        if (!state.results[sel.fixtureId] && new Date(sel.date).getTime() + 2 * 3600_000 < now) ids.add(sel.fixtureId);
+      }
+    }
+    return [...ids];
+  };
+
+  async function checkResults() {
+    const ids = pendingFixtures();
+    if (!ids.length || state.checking) return;
+    state.checking = true;
+    render();
+
+    let found = 0;
+    for (const id of ids) {
+      try {
+        const res = await fetch(`/api/result/${id}`);
+        if (!res.ok) continue;
+        const data = await res.json();
+        if (data.played && data.result) {
+          state.results[id] = data.result;
+          found++;
+        }
+      } catch {
+        // Ağ hatası: bir sonraki denemede tekrar bakılır.
+      }
+    }
+
+    write(RESULTS_KEY, state.results);
+    state.checking = false;
+    state.notice = found ? `${found} maçın sonucu güncellendi.` : 'Sonuçlanan yeni maç yok.';
+    render();
+  }
+
+  function evaluate(entry) {
+    const picks = entry.selections.map((sel) => {
+      const result = state.results[sel.fixtureId];
+      return { ...sel, result, hit: result ? CO.model.marketHit(sel.pickKey, result) : null };
+    });
+    const status = picks.some((p) => p.hit === false) ? 'lost' : picks.every((p) => p.hit === true) ? 'won' : 'pending';
+    return { picks, status };
+  }
+
+  function historyStats() {
+    const stats = {
+      total: state.history.length,
+      won: 0,
+      lost: 0,
+      pending: 0,
+      picks: 0,
+      pickHits: 0,
+      byMethod: { form: { picks: 0, hits: 0 }, model: { picks: 0, hits: 0 } },
+    };
+    for (const entry of state.history) {
+      const { picks, status } = evaluate(entry);
+      stats[status === 'won' ? 'won' : status === 'lost' ? 'lost' : 'pending']++;
+      for (const pick of picks) {
+        if (pick.hit === null) continue;
+        stats.picks++;
+        if (pick.hit) stats.pickHits++;
+        const method = stats.byMethod[entry.method] ?? stats.byMethod.form;
+        method.picks++;
+        if (pick.hit) method.hits++;
+      }
+    }
+    return stats;
   }
 
   // ---------- paylaşım ----------
@@ -395,6 +507,65 @@
       </section>`;
   }
 
+  const STATUS_LABEL = { won: '✅ Tuttu', lost: '❌ Yattı', pending: '⏳ Bekliyor' };
+
+  function historyView() {
+    if (!state.history.length) {
+      return `<p class="empty">Karne boş. Bir kupon hazırlayıp <b>Karneye kaydet</b> dersen maçlar bitince
+        tutup tutmadığı burada otomatik görünür.</p>`;
+    }
+
+    const stats = historyStats();
+    const rate = (hits, total) => (total ? `%${Math.round((hits / total) * 100)}` : '–');
+    const methodLine = Object.entries(stats.byMethod)
+      .filter(([, m]) => m.picks)
+      .map(([key, m]) => `${METHODS[key].label}: ${rate(m.hits, m.picks)} (${m.hits}/${m.picks})`)
+      .join(' · ');
+
+    const entries = state.history
+      .map((entry) => {
+        const { picks, status } = evaluate(entry);
+        const hits = picks.filter((p) => p.hit === true).length;
+        const resolved = picks.filter((p) => p.hit !== null).length;
+        return `<li class="k-entry ${status}">
+          <div class="k-head">
+            <span class="k-status">${STATUS_LABEL[status]}</span>
+            <span class="muted">${esc(dateFormat.format(new Date(entry.savedAt)))} · ${entry.selections.length} maç
+              · oran ${entry.totalOdds ? entry.totalOdds.toFixed(2) : '–'} · ${hits}/${resolved || '?'} tercih tuttu</span>
+            <button type="button" class="c-remove" data-k-remove="${esc(entry.id)}" aria-label="Kuponu karneden sil">×</button>
+          </div>
+          <ul class="k-picks">${picks
+            .map(
+              (p) => `<li class="${p.hit === true ? 'hit' : p.hit === false ? 'miss' : 'wait'}">
+                <span>${p.hit === true ? '✓' : p.hit === false ? '✗' : '⏳'}</span>
+                <span class="k-match">${esc(p.home)} – ${esc(p.away)}</span>
+                <b>${esc(p.label)}</b>
+                <span class="muted">${p.result ? `${p.result.home}-${p.result.away}` : dateFormat.format(new Date(p.date))}</span>
+              </li>`,
+            )
+            .join('')}</ul>
+        </li>`;
+      })
+      .join('');
+
+    return `
+      <div class="c-summary k-summary">
+        <div><span>Kupon</span><b>${stats.total}</b></div>
+        <div><span>Tutan</span><b class="win-text">${stats.won}</b></div>
+        <div><span>Yatan</span><b class="loss-text">${stats.lost}</b></div>
+        <div class="c-prob"><span>Tercih isabeti</span><b>${rate(stats.pickHits, stats.picks)}</b></div>
+      </div>
+      ${methodLine ? `<p class="c-odds-note">Yönteme göre isabet — ${esc(methodLine)}</p>` : ''}
+      ${stats.pending ? `<p class="note">${stats.pending} kupon hâlâ bekliyor.</p>` : ''}
+      <div class="c-actions">
+        <button type="button" class="btn" data-k-refresh ${state.checking ? 'disabled' : ''}>
+          ${state.checking ? 'Kontrol ediliyor…' : '🔄 Sonuçları güncelle'}
+        </button>
+        <button type="button" class="btn danger" data-k-clear>Karneyi temizle</button>
+      </div>
+      <ul class="k-list">${entries}</ul>`;
+  }
+
   function render() {
     fab.querySelector('.count').textContent = state.selections.length;
     fab.setAttribute('aria-expanded', state.open);
@@ -425,20 +596,32 @@
          </div>
          ${generatorBlock()}
          <div class="c-actions">
+           <button type="button" class="btn primary" data-k-save>🗒️ Karneye kaydet</button>
            <button type="button" class="btn" data-c-share>🔗 Paylaşım linki</button>
            <button type="button" class="btn danger" data-c-clear>Kuponu temizle</button>
          </div>
          ${state.shareLink ? `<input class="c-link" readonly value="${esc(state.shareLink)}" aria-label="Paylaşım linki">` : ''}`
       : `<p class="empty">Kupon boş. Bir maçın <b>Pazarlar ve oranlar</b> tablosundaki <b>+</b> düğmesiyle tercih ekle.</p>`;
 
+    const pendingCount = state.history.filter((e) => evaluate(e).status === 'pending').length;
+    const tabs = `
+      <div class="c-tabs" role="tablist">
+        <button type="button" data-c-tab="coupon" class="${state.tab === 'coupon' ? 'on' : ''}" aria-pressed="${state.tab === 'coupon'}">
+          Kupon${state.selections.length ? ` (${state.selections.length})` : ''}
+        </button>
+        <button type="button" data-c-tab="history" class="${state.tab === 'history' ? 'on' : ''}" aria-pressed="${state.tab === 'history'}">
+          Karne${state.history.length ? ` (${state.history.length}${pendingCount ? `, ${pendingCount} bekliyor` : ''})` : ''}
+        </button>
+      </div>`;
+
     drawer.innerHTML = `
       <div class="c-head">
-        <h2>🎫 Kuponum</h2>
+        <h2>${state.tab === 'history' ? '🗒️ Karnem' : '🎫 Kuponum'}</h2>
         <button type="button" class="c-close" data-c-close aria-label="Kuponu kapat">×</button>
       </div>
+      ${tabs}
       ${state.notice ? `<p class="c-notice">${esc(state.notice)}</p>` : ''}
-      ${sharedBlock}
-      ${body}
+      ${state.tab === 'history' ? historyView() : `${sharedBlock}${body}`}
       <p class="note">Beklenti = tutma olasılığı × toplam oran − 1. Eksi ise model uzun vadede kaybettireceğini hesaplıyor.
         Paylaşım linki uygulamanın açık olduğu bilgisayarda çalışır. Tahminler kesinlik taşımaz, 18 yaş altı için değildir.</p>`;
   }
@@ -464,7 +647,25 @@
     const { dataset } = target;
 
     if ('cClose' in dataset) setOpen(false);
-    else if ('cMethod' in dataset) {
+    else if ('cTab' in dataset) {
+      state.tab = dataset.cTab;
+      state.notice = '';
+      render();
+      if (state.tab === 'history') checkResults();
+    } else if ('kSave' in dataset) saveToHistory();
+    else if ('kRefresh' in dataset) checkResults();
+    else if ('kRemove' in dataset) {
+      state.history = state.history.filter((entry) => entry.id !== dataset.kRemove);
+      write(HISTORY_KEY, state.history);
+      render();
+    } else if ('kClear' in dataset) {
+      if (window.confirm('Karnedeki tüm kuponlar silinsin mi?')) {
+        state.history = [];
+        write(HISTORY_KEY, state.history);
+        state.notice = '';
+        render();
+      }
+    } else if ('cMethod' in dataset) {
       state.method = dataset.cMethod;
       write(METHOD_KEY, state.method);
       state.generated = [];
