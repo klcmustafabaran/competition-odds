@@ -1,17 +1,22 @@
-// Poisson gol modeli.
-// Ev sahibinin iç saha, misafirin dış saha maçlarındaki attığı/yediği gol ortalamasından beklenen gol
-// (lambda) hesaplanır, skor olasılıkları Poisson dağılımıyla bulunur.
-// Az veri olduğunda iç/dış saha değerleri takımın genel ortalamasına, genel ortalama da lig ortalamasına çekilir.
+// Poisson gol modeli. Beklenen gol (lambda) iki kaynağın birleşimidir:
+//  1) Lig tablosu: takımın sezonluk hücum/savunma gücü ve ligin kendi ev sahibi avantajı
+//  2) Son maçlar: ev sahibinin iç saha, misafirin dış saha performansı (rakip gücüne göre düzeltilmiş)
+// Skor olasılıkları Poisson dağılımıyla hesaplanır. Veri azaldıkça değerler lig ortalamasına çekilir.
 (function () {
-  const LEAGUE_AVG_GOALS = 1.35;
-  const VENUE_BOOST = 1.1; // iç sahada daha çok gol atılır, deplasmanda daha çok yenir
+  const LEAGUE_AVG_GOALS = 1.35; // tablo yoksa varsayılan
+  const VENUE_BOOST = 1.1; // tablo yoksa varsayılan ev sahibi avantajı
   const VENUE_DAMP = 0.9;
   const PRIOR_MATCHES = 5;
+  const STRENGTH_PRIOR_MATCHES = 5;
   const RECENT_MATCHES = 10;
+  const MAX_TABLE_WEIGHT = 0.6; // tablo ile form arasındaki en yüksek tablo ağırlığı
+  const TABLE_FULL_WEIGHT_AFTER = 10; // bu kadar maç oynandıysa tablo tam ağırlığa ulaşır
   const MAX_GOALS = 10;
   const PENALTY_PER_ABSENCE = 0.02;
   const MAX_ABSENCE_PENALTY = 0.1;
   const VALUE_THRESHOLD = 0.05;
+
+  const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
   function poisson(k, lambda) {
     let p = Math.exp(-lambda);
@@ -26,27 +31,61 @@
 
   const average = (matches, key) => matches.reduce((t, m) => t + m[key], 0) / matches.length;
 
-  function overallRates(team) {
-    const matches = team.recent.slice(0, RECENT_MATCHES);
-    const n = matches.length;
-    if (!n) return { scored: LEAGUE_AVG_GOALS, conceded: LEAGUE_AVG_GOALS, n: 0 };
+  // Lig tablosundan takım güçleri ve ligin gerçek ev sahibi avantajı.
+  // attack/defence 1.00 = lig ortalaması; 1.20 hücum = ligin %20 üstünde gol atıyor.
+  function leagueStrengths(report) {
+    const rows = report.standings?.rows ?? [];
+    const context = report.standings?.context ?? {};
+    const leagueAvg = context.leagueAvgGoals > 0 ? context.leagueAvgGoals : LEAGUE_AVG_GOALS;
+    const homeFactor = context.homeAvgGoals > 0 ? clamp(context.homeAvgGoals / leagueAvg, 0.9, 1.35) : VENUE_BOOST;
+    const awayFactor = context.awayAvgGoals > 0 ? clamp(context.awayAvgGoals / leagueAvg, 0.7, 1.1) : VENUE_DAMP;
+
+    const teams = {};
+    for (const row of rows) {
+      if (!row.played || row.goalsFor == null || row.goalsAgainst == null) continue;
+      // Az maç oynandıysa güç 1.00'e (lig ortalamasına) yaklaştırılır.
+      const weight = row.played / (row.played + STRENGTH_PRIOR_MATCHES);
+      const attack = 1 + weight * (row.goalsFor / row.played / leagueAvg - 1);
+      const defence = 1 + weight * (row.goalsAgainst / row.played / leagueAvg - 1);
+      teams[row.team.id] = { attack: clamp(attack, 0.5, 1.8), defence: clamp(defence, 0.5, 1.8), played: row.played };
+    }
+
+    return { leagueAvg, homeFactor, awayFactor, teams, hasTable: Object.keys(teams).length > 0 };
+  }
+
+  // "3 gol attı" ile "ligin en kötü savunmasına 3 gol attı" aynı değil: rakip gücüne göre düzeltilir.
+  function adjustedMatches(team, strengths) {
+    return team.recent.map((m) => {
+      const opponent = strengths.teams[m.opponent?.id];
+      if (!opponent) return m;
+      return { ...m, goalsFor: m.goalsFor / opponent.defence, goalsAgainst: m.goalsAgainst / opponent.attack };
+    });
+  }
+
+  function overallRates(matches, strengths) {
+    const recent = matches.slice(0, RECENT_MATCHES);
+    const n = recent.length;
+    if (!n) return { scored: strengths.leagueAvg, conceded: strengths.leagueAvg, n: 0 };
     return {
-      scored: shrink(average(matches, 'goalsFor'), n, LEAGUE_AVG_GOALS),
-      conceded: shrink(average(matches, 'goalsAgainst'), n, LEAGUE_AVG_GOALS),
+      scored: shrink(average(recent, 'goalsFor'), n, strengths.leagueAvg),
+      conceded: shrink(average(recent, 'goalsAgainst'), n, strengths.leagueAvg),
       n,
     };
   }
 
-  function venueRates(team, atHome) {
-    const overall = overallRates(team);
-    const scoredPrior = overall.scored * (atHome ? VENUE_BOOST : VENUE_DAMP);
-    const concededPrior = overall.conceded * (atHome ? VENUE_DAMP : VENUE_BOOST);
-    const matches = team.recent.filter((m) => m.isHome === atHome).slice(0, RECENT_MATCHES);
-    const n = matches.length;
+  function venueRates(matches, atHome, strengths) {
+    const overall = overallRates(matches, strengths);
+    const scoredFactor = atHome ? strengths.homeFactor : strengths.awayFactor;
+    const concededFactor = atHome ? strengths.awayFactor : strengths.homeFactor;
+    const scoredPrior = overall.scored * scoredFactor;
+    const concededPrior = overall.conceded * concededFactor;
+
+    const venue = matches.filter((m) => m.isHome === atHome).slice(0, RECENT_MATCHES);
+    const n = venue.length;
     if (!n) return { scored: scoredPrior, conceded: concededPrior, n: 0, overallN: overall.n };
     return {
-      scored: shrink(average(matches, 'goalsFor'), n, scoredPrior),
-      conceded: shrink(average(matches, 'goalsAgainst'), n, concededPrior),
+      scored: shrink(average(venue, 'goalsFor'), n, scoredPrior),
+      conceded: shrink(average(venue, 'goalsAgainst'), n, concededPrior),
       n,
       overallN: overall.n,
     };
@@ -60,10 +99,32 @@
   }
 
   function predict(report) {
-    const h = venueRates(report.home, true);
-    const a = venueRates(report.away, false);
-    const lambdaHome = ((h.scored + a.conceded) / 2) * (1 - absencePenalty(report.home));
-    const lambdaAway = ((a.scored + h.conceded) / 2) * (1 - absencePenalty(report.away));
+    const strengths = leagueStrengths(report);
+    const h = venueRates(adjustedMatches(report.home, strengths), true, strengths);
+    const a = venueRates(adjustedMatches(report.away, strengths), false, strengths);
+
+    // 1) Son maçlara dayalı beklenti
+    const formHome = (h.scored + a.conceded) / 2;
+    const formAway = (a.scored + h.conceded) / 2;
+
+    // 2) Lig tablosuna dayalı beklenti (iki takım da tabloda varsa)
+    const homeStrength = strengths.teams[report.home.id];
+    const awayStrength = strengths.teams[report.away.id];
+    let lambdaHome = formHome;
+    let lambdaAway = formAway;
+    let tableWeight = 0;
+
+    if (homeStrength && awayStrength) {
+      const tableHome = strengths.leagueAvg * homeStrength.attack * awayStrength.defence * strengths.homeFactor;
+      const tableAway = strengths.leagueAvg * awayStrength.attack * homeStrength.defence * strengths.awayFactor;
+      const played = Math.min(homeStrength.played, awayStrength.played);
+      tableWeight = Math.min(1, played / TABLE_FULL_WEIGHT_AFTER) * MAX_TABLE_WEIGHT;
+      lambdaHome = tableWeight * tableHome + (1 - tableWeight) * formHome;
+      lambdaAway = tableWeight * tableAway + (1 - tableWeight) * formAway;
+    }
+
+    lambdaHome *= 1 - absencePenalty(report.home);
+    lambdaAway *= 1 - absencePenalty(report.away);
 
     let home = 0;
     let draw = 0;
@@ -100,6 +161,14 @@
       topScores: scores.slice(0, 3).map((s) => ({ score: s.score, p: s.p / mass })),
       sampleSize: Math.min(h.overallN, a.overallN),
       venueSampleSize: Math.min(h.n, a.n),
+      basis: {
+        tableWeight,
+        leagueAvg: strengths.leagueAvg,
+        homeFactor: strengths.homeFactor,
+        awayFactor: strengths.awayFactor,
+        home: homeStrength ?? null,
+        away: awayStrength ?? null,
+      },
     };
   }
 
@@ -208,5 +277,5 @@
   }
 
   window.CO = window.CO || {};
-  window.CO.model = { predict, marketRows, marketList, VALUE_THRESHOLD };
+  window.CO.model = { predict, marketRows, marketList, leagueStrengths, VALUE_THRESHOLD };
 })();

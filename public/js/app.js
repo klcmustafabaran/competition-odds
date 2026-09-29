@@ -363,6 +363,13 @@
           <div><b>${prediction.lambdaAway.toFixed(2)}</b><span>Beklenen gol (misafir)</span></div>
           <div><b>${pct(prediction.btts)}</b><span>KG var</span></div>
         </div>
+        ${
+          prediction.basis?.tableWeight
+            ? `<p class="note basis">Hesap temeli: lig tablosundaki güçler %${Math.round(prediction.basis.tableWeight * 100)},
+               son maçlar %${Math.round((1 - prediction.basis.tableWeight) * 100)}.
+               Ligin ev sahibi avantajı ${prediction.basis.homeFactor.toFixed(2)}, maç başı ortalama ${prediction.basis.leagueAvg.toFixed(2)} gol.</p>`
+            : '<p class="note basis">Hesap temeli: son maçlar (bu organizasyonda puan durumu yok).</p>'
+        }
         <h3>En olası skorlar</h3>
         <div class="scores">${prediction.topScores.map((s) => `<span class="chip">${s.score} <b>${pct(s.p)}</b></span>`).join('')}</div>
         <h3>Pazarlar ve oranlar</h3>
@@ -385,13 +392,15 @@
     return factor.bars
       .map((bar) => {
         const max = Math.max(bar.home, bar.away) || 1;
+        // Güç değerleri (1.00 civarı) için iki hane, gol ortalamaları için bir hane.
+        const digits = max < 3 ? 2 : 1;
         return `<div class="cmp">
           <span class="cmp-label">${esc(bar.label)}</span>
           <div class="cmp-row">
-            <b class="home-text">${bar.home.toFixed(1)}</b>
+            <b class="home-text">${bar.home.toFixed(digits)}</b>
             <div class="cmp-track left"><div class="cmp-fill home" style="width:${(bar.home / max) * 100}%"></div></div>
             <div class="cmp-track"><div class="cmp-fill away" style="width:${(bar.away / max) * 100}%"></div></div>
-            <b class="away-text">${bar.away.toFixed(1)}</b>
+            <b class="away-text">${bar.away.toFixed(digits)}</b>
           </div>
         </div>`;
       })

@@ -47,6 +47,26 @@
     };
   }
 
+  // Lig tablosundan hesaplanan sezonluk güç: 1.00 = lig ortalaması.
+  function strengthFactor(report) {
+    const strengths = CO.model.leagueStrengths(report);
+    const h = strengths.teams[report.home.id];
+    const a = strengths.teams[report.away.id];
+    if (!h || !a) return null;
+    const quality = (t) => t.attack - t.defence;
+    return {
+      icon: '📈',
+      title: 'Hücum / savunma gücü',
+      side: sideOf(quality(h), quality(a), 0.2),
+      bars: [
+        { label: 'Hücum gücü (lig ort. 1.00)', home: h.attack, away: a.attack },
+        { label: 'Savunma (düşük olan iyi)', home: h.defence, away: a.defence },
+      ],
+      detail: `Lig tablosundaki ${h.played} ve ${a.played} maça göre; ligde maç başı ortalama ${strengths.leagueAvg.toFixed(2)} gol`,
+      reason: 'lig genelinde daha güçlü',
+    };
+  }
+
   function standingsFactor(report) {
     const rows = report.standings?.rows;
     if (!rows) return null;
@@ -259,6 +279,7 @@
 
   function build(report, prediction, marketRows) {
     const factors = [
+      strengthFactor(report),
       venueFactor(report),
       standingsFactor(report),
       formFactor(report),

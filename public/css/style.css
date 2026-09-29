@@ -167,6 +167,7 @@ ul { list-style: none; margin: 0; padding: 0; }
 .seg.home { background: color-mix(in srgb, var(--home) 20%, var(--card)); color: var(--home); }
 .seg.draw { background: color-mix(in srgb, var(--draw) 18%, var(--card)); color: var(--text-soft); }
 .seg.away { background: color-mix(in srgb, var(--away) 20%, var(--card)); color: var(--away); }
+.note.basis { margin: -.4rem 0 1rem; }
 .scores { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: 1.1rem; }
 .prediction .stats { margin-bottom: 1.1rem; }
 

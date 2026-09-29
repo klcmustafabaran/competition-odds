@@ -53,7 +53,7 @@ function fromTeamView(match, teamId) {
     date: match.utcDate,
     league: competitionName(match.competition),
     isHome,
-    opponent: { name: displayName(opponent), logo: opponent.crest },
+    opponent: { id: opponent.id, name: displayName(opponent), logo: opponent.crest },
     goalsFor,
     goalsAgainst,
     result: goalsFor > goalsAgainst ? 'G' : goalsFor < goalsAgainst ? 'M' : 'B',
@@ -95,12 +95,32 @@ function parseHeadToHead(data) {
     }));
 }
 
+// Bir tablodaki toplam maç başına gol (takım başına): lig ortalaması ve ev/deplasman katsayıları için.
+function goalsPerMatch(table) {
+  if (!table?.length) return null;
+  const played = table.reduce((t, r) => t + (r.playedGames ?? 0), 0);
+  const goals = table.reduce((t, r) => t + (r.all?.goalsFor ?? r.goalsFor ?? 0), 0);
+  return played > 0 ? goals / played : null;
+}
+
 function parseStandings(data, homeId, awayId, leagueName) {
-  const groups = (data.standings ?? []).filter((s) => s.type === 'TOTAL');
+  const standings = data.standings ?? [];
+  const groups = standings.filter((s) => s.type === 'TOTAL');
   const group = groups.find((g) => g.table.some((r) => r.team.id === homeId || r.team.id === awayId));
   if (!group) return null;
+
+  // Ligin kendi ev sahibi avantajı: sabit varsayım yerine HOME/AWAY tablolarından hesaplanır.
+  const sameGroup = (s) => s.group === group.group;
+  const homeTable = standings.find((s) => s.type === 'HOME' && sameGroup(s))?.table;
+  const awayTable = standings.find((s) => s.type === 'AWAY' && sameGroup(s))?.table;
+
   return {
     league: group.group ? `${leagueName} · ${group.group.replace('GROUP_', 'Grup ')}` : leagueName,
+    context: {
+      leagueAvgGoals: goalsPerMatch(group.table),
+      homeAvgGoals: goalsPerMatch(homeTable),
+      awayAvgGoals: goalsPerMatch(awayTable),
+    },
     rows: group.table.map((r) => ({
       rank: r.position,
       team: { id: r.team.id, name: displayName(r.team), logo: r.team.crest },
@@ -108,6 +128,8 @@ function parseStandings(data, homeId, awayId, leagueName) {
       win: r.won,
       draw: r.draw,
       lose: r.lost,
+      goalsFor: r.goalsFor,
+      goalsAgainst: r.goalsAgainst,
       goalDiff: r.goalDifference,
       points: r.points,
     })),
